@@ -35,14 +35,7 @@ DEBUG : bool = os.environ.get("DEBUG", 'False').lower() == "true"
 
 class Sleeper:
     def __init__(self, config: DictConfig):
-        # Setup logging
-        if not os.path.exists("logs"):
-            os.makedirs("logs")
-        logging.basicConfig(
-            filename=f'logs/{"debug_" if DEBUG else ""}sleeper_{datetime.now().strftime("%Y-%m-%d-%H")}.log',
-            level=logging.DEBUG if DEBUG else logging.INFO,
-            format="%(asctime)s - %(levelname)s - %(message)s",
-        )
+        # Logging is configured by Hydra per the YAML config; do not override here
         self.config = config
         logging.info(f"Loaded configuration: {OmegaConf.to_yaml(self.config)}")
 
@@ -64,9 +57,9 @@ class Sleeper:
         dc.ellipse((0, 0, width, height), fill=(200, 50, 30, 255)) # Red circle
 
         menu = (
-            pystray.MenuItem('退出', self.exit_action),
+            pystray.MenuItem('Exit', self.exit_action),
         )
-        self.icon = pystray.Icon("sleeper_app", image, "电脑使用限制", menu)
+        self.icon = pystray.Icon("sleeper_app", image, "Sleeper", menu)
         logging.info("System tray icon setup complete.")
 
     def setup_tk(self):
@@ -99,29 +92,29 @@ class Sleeper:
         
     def _minimize_desktop(self):
         """Minimizes all open windows."""
-        # try:
-        import win32com.client
-        shell = win32com.client.Dispatch("Shell.Application")
-        shell.MinimizeAll()
-        logging.info("所有窗口已最小化。")
-        # except Exception as e:
-        #     logging.error(f"最小化桌面时出错: {e}")
+        try:
+            import win32com.client
+            shell = win32com.client.Dispatch("Shell.Application")
+            shell.MinimizeAll()
+            logging.info("All windows are minimized")
+        except Exception as e:
+            logging.error(f"Error in minimizing windows: {e}")
 
     def _show_popup(self, message: str):
         """Shows a Tkinter warning popup."""
         def show():
             # Ensure the popup appears on top of other windows
-            logging.warning(f"弹出警告: {message}")
+            logging.warning(f"Popup Warning: {message}")
             if self.tkroot:
                 self.tkroot.attributes('-topmost', True)
-                messagebox.showwarning("警告", message, parent=self.tkroot)
+                messagebox.showwarning("Warning", message, parent=self.tkroot)
                 self.tkroot.attributes('-topmost', False) # Reset topmost attribute
 
         
         if self.tkroot:
             self.tkroot.after(0, show) # Schedule the popup on the Tkinter thread
         else:
-            logging.error("Tkinter root 未初始化，无法显示弹窗。")
+            logging.error("Tkinter root is not initialized and cannot popup message.")
 
     def get_active_window_info(self) -> Tuple[str, str]:
         """
@@ -147,7 +140,7 @@ class Sleeper:
                 exe_path = process.exe()
                 return window_title, exe_path
             except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess) as e:
-                logging.debug(f"无法获取 PID {pid} 的进程信息: {e}")
+                logging.debug(f"Cannot get the information of process PID {pid}: {e}")
                 return window_title, ""
         except Exception as e:
             logging.error(f"获取活动窗口信息时出错: {e}")
@@ -192,7 +185,7 @@ class Sleeper:
         elif mode == "whitelist":
             return app_name in allowed_apps_lower
         else:
-            logging.warning(f"未知模式 '{mode}'。默认允许。")
+            logging.warning(f"Unknown mode '{mode}'. Viewed as 'allowed'. ")
             return True # 未知模式，假定允许
 
     def loop(self):

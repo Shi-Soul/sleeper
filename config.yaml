@@ -1,8 +1,8 @@
-# config.yaml
-check_interval: 5 # 检查频率，单位：秒
+# Application settings
+check_interval: 2  # seconds
 
 time_windows:
-  - name: "夜间限制"
+  - name: "Night Limit"
     start_time: "00:00"
     end_time: "06:00"
     mode: "blacklist" # 黑名单模式：列出的应用不允许运行
@@ -21,18 +21,37 @@ time_windows:
       - "cmd.exe"
       - "powershell.exe"
 
-  - name: "学习时间"
-    start_time: "19:00"
-    end_time: "21:00"
-    mode: "whitelist" # 白名单模式：只允许列出的应用运行
-    app_list:
-      - "code.exe" # VS Code
-      - "notepad.exe"
-      - "word.exe"
-      - "excel.exe"
-      - "powerpnt.exe"
-      - "python.exe"
-      - "pycharm64.exe"
-      - "jupyter-notebook.exe"
-      - "msedge.exe" # 允许使用浏览器进行学习资料查询
-      - "chrome.exe" # 允许使用浏览器进行学习资料查询
+# Hydra configuration (logging, output dirs, etc.)
+hydra:
+  run:
+    # Create a run directory per execution; Hydra ensures it exists
+    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+
+  # output_subdir: null  # don't create an extra .hydra subdir under run dir
+
+  # Ensure Hydra's own logs don't disable existing loggers
+  hydra_logging:
+    disable_existing_loggers: false
+
+  # Configure application logging (root logger)
+  job_logging:
+    version: 1
+    # formatters:
+    #   simple:
+    #     format: "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
+    #     datefmt: "%Y-%m-%d %H:%M:%S"
+    handlers:
+      console:
+        class: logging.StreamHandler
+        formatter: simple
+        stream: ext://sys.stdout
+      file:
+        class: logging.FileHandler
+        formatter: simple
+        filename: ${hydra:run.dir}/sleeper_${now:%Y-%m-%d-%H}.log
+        # Ensure Chinese characters are written correctly
+        encoding: utf-8
+    root:
+      level: INFO
+      handlers: [console, file]
+    disable_existing_loggers: false
