@@ -120,7 +120,7 @@ class Sleeper:
             logging.warning(f"Popup Warning: {message}")
             if self.tkroot:
                 self.tkroot.attributes('-topmost', True)
-                messagebox.showwarning("Warning", message, parent=self.tkroot)
+                messagebox.showinfo("Sleeper", message, parent=self.tkroot)
                 self.tkroot.attributes('-topmost', False) # Reset topmost attribute
 
         
@@ -213,11 +213,23 @@ class Sleeper:
             if active_app_path: # 仅在成功获取应用程序路径时进行检查
                 for window_cfg in self.config.time_windows:
                     if self.is_time_restricted(current_time, window_cfg):
-                        logging.debug(f"Current time {current_time} is within restricted window '{window_cfg.name}'.")
+                        logging.debug(f"Current time {current_time} is within restricted time interval '{window_cfg.name}'.")
                         if not self.is_app_allowed(active_app_path, window_cfg.mode, window_cfg.app_list):
-                            logging.info(f"Violation detected: Application '{os.path.basename(active_app_path)}' ({active_window_title}) is not allowed during '{window_cfg.name}' (mode: {window_cfg.mode}).")
+                            logging.info(f"Violation detected: Application '{os.path.basename(active_app_path)}' ({active_window_title}) is not allowed during time interval '{window_cfg.name}' (mode: {window_cfg.mode}).")
                             self._minimize_desktop()
-                            self._show_popup(f"Application '{os.path.basename(active_app_path)}' is restricted during the current time period!")
+                            app_name = os.path.basename(active_app_path)
+                            current_time_str = now.strftime("%H:%M:%S")
+                            time_range = f"{window_cfg.start_time} - {window_cfg.end_time}"
+                            mode_label = "Whitelist" if window_cfg.mode == "whitelist" else "Blacklist"
+                            message = (
+                                f"{window_cfg.name}\n\n"
+                                f"Current time: {current_time_str}\n"
+                                f"Time range: {time_range}\n"
+                                f"Window title: {active_window_title}\n"
+                                f"Application: {app_name}\n"
+                                f"Mode: {mode_label} :=> ({', '.join(window_cfg.app_list)})\n"
+                            )
+                            self._show_popup(message)
                             restricted_active = True
                             break # enough to find one restriction, no need to check other windows
             
