@@ -20,10 +20,8 @@ from typing import List, Tuple
 
 # Windows specific imports
 import win32gui
-import win32api
 import win32process
-import win32con
-import win32com.client # For MinimizeAll
+
 
 # Configuration management
 import hydra
@@ -101,23 +99,24 @@ class Sleeper:
         
     def _minimize_desktop(self):
         """Minimizes all open windows."""
-        try:
-            import win32com.client
-            shell = win32com.client.Dispatch("Shell.Application")
-            shell.MinimizeAll()
-            logging.info("所有窗口已最小化。")
-        except Exception as e:
-            logging.error(f"最小化桌面时出错: {e}")
+        # try:
+        import win32com.client
+        shell = win32com.client.Dispatch("Shell.Application")
+        shell.MinimizeAll()
+        logging.info("所有窗口已最小化。")
+        # except Exception as e:
+        #     logging.error(f"最小化桌面时出错: {e}")
 
     def _show_popup(self, message: str):
         """Shows a Tkinter warning popup."""
         def show():
             # Ensure the popup appears on top of other windows
+            logging.warning(f"弹出警告: {message}")
             if self.tkroot:
                 self.tkroot.attributes('-topmost', True)
                 messagebox.showwarning("警告", message, parent=self.tkroot)
                 self.tkroot.attributes('-topmost', False) # Reset topmost attribute
-            logging.warning(f"弹出警告: {message}")
+
         
         if self.tkroot:
             self.tkroot.after(0, show) # Schedule the popup on the Tkinter thread
