@@ -2,6 +2,7 @@
 build
 dist
 logs
+outputs
 *.log
 *debug*
 get_ratio.ipynb

@@ -1,2 +1,2 @@
 @echo off
-start E:\Miniconda\envs\py3.10\pythonw.exe main.py
+start pythonw main.py

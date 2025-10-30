@@ -1,0 +1,38 @@
+# config.yaml
+check_interval: 5 # 检查频率，单位：秒
+
+time_windows:
+  - name: "夜间限制"
+    start_time: "00:00"
+    end_time: "06:00"
+    mode: "blacklist" # 黑名单模式：列出的应用不允许运行
+    app_list:
+      - "chrome.exe"
+      - "firefox.exe"
+      - "steam.exe"
+      - "epicgameslauncher.exe"
+      - "valorant.exe"
+      - "cs2.exe"
+      - "discord.exe"
+      - "telegram.exe"
+      - "wechat.exe"
+      - "qq.exe"
+      # - "explorer.exe" # 限制文件管理器，防止通过它启动其他应用
+      - "cmd.exe"
+      - "powershell.exe"
+
+  - name: "学习时间"
+    start_time: "19:00"
+    end_time: "21:00"
+    mode: "whitelist" # 白名单模式：只允许列出的应用运行
+    app_list:
+      - "code.exe" # VS Code
+      - "notepad.exe"
+      - "word.exe"
+      - "excel.exe"
+      - "powerpnt.exe"
+      - "python.exe"
+      - "pycharm64.exe"
+      - "jupyter-notebook.exe"
+      - "msedge.exe" # 允许使用浏览器进行学习资料查询
+      - "chrome.exe" # 允许使用浏览器进行学习资料查询
