@@ -51,14 +51,18 @@ class Sleeper:
 
     def setup_icontray(self):
         """Initializes the system tray icon."""
-        # Generate a simple red circle icon
-        width, height = 64, 64
-        image = Image.new('RGBA', (width, height), (0, 0, 0, 0))
-        dc = ImageDraw.Draw(image)
-        margin = 0.05
-        dc.ellipse((int(width*margin), int(height*margin), int(width*(1-margin)), int(height*(1-margin))), fill=(180, 30, 30, 100)) # Red circle
-        margin = 0.2
-        dc.ellipse((int(width*margin), int(height*margin), int(width*(1-margin)), int(height*(1-margin))), fill=(230, 50, 50, 200)) # Red circle
+        # Generate and load icon from file
+        try:
+            from icon_util import generate_tray_icon
+
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            icon_path = os.path.join(base_dir, 'sleeper64.ico')
+            
+            generate_tray_icon(icon_path, size=64)
+            image = Image.open(icon_path)
+        except Exception as e:
+            logging.error(f"Failed to generate/load tray icon: {e}")
+            image = Image.new('RGBA', (64, 64), (0, 0, 0, 0))
 
         menu = (
             pystray.MenuItem('Restart', self.exit_action),

@@ -25,6 +25,22 @@ python main.py
 To run as a background service or at startup, you can use `pythonw.exe` (see `run_bg.bat`). Ensure you use the correct Python interpreter.
 
 
+## Startup at login (Windows)
+
+Place a shortcut to `sleeper/run_bg.bat` into a Startup folder to auto-run at user logon.
+
+### Per-user startup (recommended)
+- Open: Press Win+R, type `shell:startup`, press Enter
+- Path: `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`
+- Action: Put a shortcut to `run_bg.bat` in this folder
+
+### All users startup (requires admin)
+- Open: Press Win+R, type `shell:common startup`, press Enter
+- Path: `%ProgramData%\Microsoft\Windows\Start Menu\Programs\StartUp`
+- Action: Put the shortcut here to apply for all accounts
+
+
+
 ## Configuration
 
 Configuration is managed with Hydra and read from `config.yaml` in the same directory. You can define multiple time windows; each window has its own mode and app list.
