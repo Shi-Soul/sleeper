@@ -27,7 +27,7 @@ To run as a background service or at startup, you can use `pythonw.exe` (see `ru
 
 ## Startup at login (Windows)
 
-Place a shortcut to `sleeper/run_bg.bat` into a Startup folder to auto-run at user logon.
+Place a shortcut to `run_bg.bat` into a Startup folder to auto-run at user logon.
 
 ### Per-user startup (recommended)
 - Open: Press Win+R, type `shell:startup`, press Enter
