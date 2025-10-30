@@ -10,6 +10,7 @@ time_windows:
       - "explorer.exe"
       - "cmd.exe"
       - "powershell.exe"
+      - "python.exe"
 
 # Hydra configuration (logging, output dirs, etc.)
 hydra:

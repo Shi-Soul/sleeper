@@ -15,7 +15,7 @@ import threading
 from PIL import Image, ImageDraw
 import pystray
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time as dtime
 from typing import List, Tuple
 
 # Windows specific imports
@@ -41,6 +41,7 @@ class Sleeper:
 
         self.tkroot: tk.Tk = None # type: ignore
         self.icon: pystray.Icon = None # type: ignore
+        self.exit_code: int = 0
 
         # Setup system tray icon
         self.setup_icontray()
@@ -57,7 +58,7 @@ class Sleeper:
         dc.ellipse((0, 0, width, height), fill=(200, 50, 30, 255)) # Red circle
 
         menu = (
-            pystray.MenuItem('Exit', self.exit_action),
+            pystray.MenuItem('Restart', self.exit_action),
         )
         self.icon = pystray.Icon("sleeper_app", image, "Sleeper", menu)
         logging.info("System tray icon setup complete.")
@@ -81,14 +82,19 @@ class Sleeper:
             logging.error("System tray icon not initialized. Exiting.")
             sys.exit(1)
 
-    def exit_action(self, icon: pystray.Icon, item: pystray.MenuItem):
+        # After the tray loop exits, terminate the process with the intended code
+        sys.exit(self.exit_code)
+
+    def exit_action(self, icon, item):
         """Handles the exit action from the system tray menu."""
         logging.info("Exiting application via system tray.")
+        # Set non-zero exit code so guardian restarts us
+        self.exit_code = 2
         if self.icon:
             self.icon.stop() # Stop the pystray icon loop
         if self.tkroot:
             self.tkroot.quit() # Properly quit the Tkinter mainloop
-        sys.exit(0)
+        # Do not call sys.exit() here (callback thread). Main thread will exit with exit_code after icon.run() returns.
         
     def _minimize_desktop(self):
         """Minimizes all open windows."""
@@ -146,7 +152,7 @@ class Sleeper:
             logging.error(f"Error retrieving active window information: {e}")
             return "", ""
 
-    def is_time_restricted(self, current_time: datetime.time, time_window_cfg: DictConfig) -> bool:
+    def is_time_restricted(self, current_time: dtime, time_window_cfg: DictConfig) -> bool:
         """
         检查当前时间是否在给定的时间窗口内。
         处理跨午夜的时间窗口。
