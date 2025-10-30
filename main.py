@@ -55,7 +55,10 @@ class Sleeper:
         width, height = 64, 64
         image = Image.new('RGBA', (width, height), (0, 0, 0, 0))
         dc = ImageDraw.Draw(image)
-        dc.ellipse((0, 0, width, height), fill=(200, 50, 30, 255)) # Red circle
+        margin = 0.05
+        dc.ellipse((int(width*margin), int(height*margin), int(width*(1-margin)), int(height*(1-margin))), fill=(180, 30, 30, 100)) # Red circle
+        margin = 0.2
+        dc.ellipse((int(width*margin), int(height*margin), int(width*(1-margin)), int(height*(1-margin))), fill=(230, 50, 50, 200)) # Red circle
 
         menu = (
             pystray.MenuItem('Restart', self.exit_action),
