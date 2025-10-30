@@ -143,7 +143,7 @@ class Sleeper:
                 logging.debug(f"Cannot get the information of process PID {pid}: {e}")
                 return window_title, ""
         except Exception as e:
-            logging.error(f"获取活动窗口信息时出错: {e}")
+            logging.error(f"Error retrieving active window information: {e}")
             return "", ""
 
     def is_time_restricted(self, current_time: datetime.time, time_window_cfg: DictConfig) -> bool:
@@ -165,7 +165,7 @@ class Sleeper:
                 # 时间窗口跨午夜 (例如, 23:00 - 06:00)
                 return current_time >= start_time or current_time <= end_time
         except Exception as e:
-            logging.error(f"检查时间限制窗口 '{time_window_cfg.name}' 时出错: {e}")
+            logging.error(f"Error while checking time restriction window '{time_window_cfg.name}': {e}")
             return False
 
     def is_app_allowed(self, app_path: str, mode: str, app_list: List[str]) -> bool:
@@ -189,7 +189,7 @@ class Sleeper:
             return True # 未知模式，假定允许
 
     def loop(self):
-        """主监控循环，定期检查活动窗口和时间限制。"""
+        """Main monitoring loop, periodically checking active windows and time restrictions."""
         while True:
             now = datetime.now()
             current_time = now.time()
@@ -200,23 +200,23 @@ class Sleeper:
             if active_app_path: # 仅在成功获取应用程序路径时进行检查
                 for window_cfg in self.config.time_windows:
                     if self.is_time_restricted(current_time, window_cfg):
-                        logging.debug(f"当前时间 {current_time} 在限制窗口 '{window_cfg.name}' 内。")
+                        logging.debug(f"Current time {current_time} is within restricted window '{window_cfg.name}'.")
                         if not self.is_app_allowed(active_app_path, window_cfg.mode, window_cfg.app_list):
-                            logging.info(f"检测到违规: 应用程序 '{os.path.basename(active_app_path)}' ({active_window_title}) 在 '{window_cfg.name}' ({window_cfg.mode} 模式) 期间不被允许。")
+                            logging.info(f"Violation detected: Application '{os.path.basename(active_app_path)}' ({active_window_title}) is not allowed during '{window_cfg.name}' (mode: {window_cfg.mode}).")
                             self._minimize_desktop()
-                            self._show_popup(f"应用程序 '{os.path.basename(active_app_path)}' 在当前时间段内被限制使用！")
+                            self._show_popup(f"Application '{os.path.basename(active_app_path)}' is restricted during the current time period!")
                             restricted_active = True
-                            break # 找到一个限制就足够了，无需检查其他窗口
+                            break # enough to find one restriction, no need to check other windows
             
             if not restricted_active:
-                logging.debug(f"无活动限制或应用程序被允许。当前时间: {current_time}, 活动应用: {os.path.basename(active_app_path) if active_app_path else 'N/A'}")
+                logging.debug(f"No active restriction or application is allowed. Current time: {current_time}, Active app: {os.path.basename(active_app_path) if active_app_path else 'N/A'}")
 
             time.sleep(self.config.check_interval)
 
 @hydra.main(version_base=None, config_path=".", config_name="config")
 def main(cfg: DictConfig):
     """
-    主函数，由 Hydra 启动。
+    Main function, started by Hydra.
     """
     logging.info("Sleeper application starting...")
     monitor = Sleeper(config=cfg)
