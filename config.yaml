@@ -5,19 +5,9 @@ time_windows:
   - name: "Night Limit"
     start_time: "00:00"
     end_time: "06:00"
-    mode: "blacklist" # 黑名单模式：列出的应用不允许运行
+    mode: "whitelist"
     app_list:
-      - "chrome.exe"
-      - "firefox.exe"
-      - "steam.exe"
-      - "epicgameslauncher.exe"
-      - "valorant.exe"
-      - "cs2.exe"
-      - "discord.exe"
-      - "telegram.exe"
-      - "wechat.exe"
-      - "qq.exe"
-      # - "explorer.exe" # 限制文件管理器，防止通过它启动其他应用
+      - "explorer.exe"
       - "cmd.exe"
       - "powershell.exe"
 

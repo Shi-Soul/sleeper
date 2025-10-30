@@ -1,10 +1,6 @@
-datetime
-
-toolz
-fn.py
-
+hydra-core
+omegaconf
 pystray
-tkinter
-PIL
-requests
-
+pillow
+psutil
+pywin32
