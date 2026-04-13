@@ -1,17 +1,14 @@
-"""Tkinter status/log viewer, analytics, and config editor — opened from tray."""
+"""Tkinter status/log viewer, analytics, and config viewer — opened from tray."""
 import tkinter as tk
-from tkinter import ttk, messagebox
-from datetime import datetime, date, timedelta
+from tkinter import ttk
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Callable, Optional
-import threading
-import yaml
 
 import logger
-from config import ConfigManager, TimeWindow, Config, _parse as _parse_config
+from config import Config
 
 BASE_DIR = Path(__file__).resolve().parent
-CONFIG_PATH = BASE_DIR / "config.yaml"
 
 # ── palette ──────────────────────────────────────────────────────────────────
 BG      = "#1e1e2e"
@@ -250,62 +247,45 @@ class StatusWindow:
         fig.tight_layout(pad=1.5)
         canvas.draw()
 
-    # ── Config Editor tab ─────────────────────────────────────────────────────
+    # ── Config Viewer tab (read-only) ─────────────────────────────────────────
 
     def _build_config_tab(self, nb: ttk.Notebook) -> None:
         frame = tk.Frame(nb, bg=BG)
-        nb.add(frame, text="Config Editor")
+        nb.add(frame, text="Config")
 
-        # ── general settings ──────────────────────────────────────────────────
+        # general settings — read-only labels
         gen = tk.LabelFrame(frame, text="General", bg=BG, fg=FG, font=FONT,
                             relief="groove", bd=1)
         gen.pack(fill="x", padx=10, pady=(8, 4))
 
-        def _row(parent, label, var, row):
-            _lbl(parent, label).grid(row=row, column=0, sticky="w", padx=8, pady=3)
-            _entry(parent, var, width=20).grid(row=row, column=1, sticky="w", padx=8)
-
         cfg = self._get_config()
-        self._ce_interval    = tk.StringVar(value=str(cfg.check_interval))
-        self._ce_override    = tk.StringVar(value=str(cfg.override_max_minutes))
-        self._ce_logdir      = tk.StringVar(value=cfg.log_dir)
+        rows = [
+            ("check_interval (s):",    str(cfg.check_interval)),
+            ("override_max_minutes:",  str(cfg.override_max_minutes)),
+            ("log_dir:",               cfg.log_dir),
+        ]
+        for r, (label, val) in enumerate(rows):
+            _lbl(gen, label).grid(row=r, column=0, sticky="w", padx=8, pady=3)
+            _lbl(gen, val, fg=PURPLE).grid(row=r, column=1, sticky="w", padx=8)
 
-        _row(gen, "check_interval (s):",    self._ce_interval, 0)
-        _row(gen, "override_max_minutes:",  self._ce_override, 1)
-        _row(gen, "log_dir:",               self._ce_logdir,   2)
-
-        # ── time windows ──────────────────────────────────────────────────────
+        # time windows — read-only treeview
         wf = tk.LabelFrame(frame, text="Time Windows", bg=BG, fg=FG, font=FONT,
                            relief="groove", bd=1)
         wf.pack(fill="both", expand=True, padx=10, pady=4)
 
         wcols = ("name", "start", "end", "mode", "force_kill", "apps")
-        self._ce_tv = ttk.Treeview(wf, columns=wcols, show="headings",
-                                   selectmode="browse", height=6)
+        tv = ttk.Treeview(wf, columns=wcols, show="headings",
+                          selectmode="none", height=6)
         for col, w in zip(wcols, (120, 60, 60, 80, 70, 300)):
-            self._ce_tv.heading(col, text=col)
-            self._ce_tv.column(col, width=w, minwidth=40)
-        wsb = tk.Scrollbar(wf, orient="vertical", command=self._ce_tv.yview)
-        self._ce_tv.configure(yscrollcommand=wsb.set)
+            tv.heading(col, text=col)
+            tv.column(col, width=w, minwidth=40)
+        wsb = tk.Scrollbar(wf, orient="vertical", command=tv.yview)
+        tv.configure(yscrollcommand=wsb.set)
         wsb.pack(side="right", fill="y")
-        self._ce_tv.pack(fill="both", expand=True, padx=4, pady=4)
+        tv.pack(fill="both", expand=True, padx=4, pady=4)
 
-        wbtn = tk.Frame(wf, bg=BG)
-        wbtn.pack(fill="x", padx=4, pady=(0, 4))
-        _btn(wbtn, "Add",    self._ce_add_window).pack(side="left", padx=4)
-        _btn(wbtn, "Edit",   self._ce_edit_window).pack(side="left", padx=4)
-        _btn(wbtn, "Delete", self._ce_del_window, bg="#6b2d2d").pack(side="left", padx=4)
-
-        self._ce_windows: list[TimeWindow] = list(cfg.time_windows)
-        self._ce_refresh_tv()
-
-        # ── save button ───────────────────────────────────────────────────────
-        _btn(frame, "💾  Save Config", self._ce_save, bg="#2d6b3a").pack(pady=6)
-
-    def _ce_refresh_tv(self) -> None:
-        self._ce_tv.delete(*self._ce_tv.get_children())
-        for w in self._ce_windows:
-            self._ce_tv.insert("", "end", values=(
+        for w in cfg.time_windows:
+            tv.insert("", "end", values=(
                 w.name,
                 w.start_time.strftime("%H:%M"),
                 w.end_time.strftime("%H:%M"),
@@ -314,135 +294,8 @@ class StatusWindow:
                 ", ".join(w.app_list),
             ))
 
-    def _ce_add_window(self) -> None:
-        self._ce_window_dialog(None)
-
-    def _ce_edit_window(self) -> None:
-        sel = self._ce_tv.selection()
-        if not sel:
-            messagebox.showinfo("Select a window", "Select a row first.", parent=self._win)
-            return
-        idx = self._ce_tv.index(sel[0])
-        self._ce_window_dialog(idx)
-
-    def _ce_del_window(self) -> None:
-        sel = self._ce_tv.selection()
-        if not sel:
-            return
-        idx = self._ce_tv.index(sel[0])
-        del self._ce_windows[idx]
-        self._ce_refresh_tv()
-
-    def _ce_window_dialog(self, idx: Optional[int]) -> None:
-        """Add/Edit dialog for a TimeWindow."""
-        editing = idx is not None
-        w = self._ce_windows[idx] if editing else None
-
-        dlg = tk.Toplevel(self._win)
-        dlg.title("Edit Window" if editing else "Add Window")
-        dlg.geometry("420x400")
-        dlg.configure(bg=BG)
-        dlg.resizable(False, False)
-        dlg.attributes("-topmost", True)
-        dlg.protocol("WM_DELETE_WINDOW", dlg.destroy)
-
-        def row(lbl, var, r):
-            _lbl(dlg, lbl).grid(row=r, column=0, sticky="w", padx=12, pady=4)
-            _entry(dlg, var, width=28).grid(row=r, column=1, sticky="w", padx=8)
-
-        v_name  = tk.StringVar(value=w.name if w else "")
-        v_start = tk.StringVar(value=w.start_time.strftime("%H:%M") if w else "00:00")
-        v_end   = tk.StringVar(value=w.end_time.strftime("%H:%M") if w else "08:00")
-        v_mode  = tk.StringVar(value=w.mode if w else "whitelist")
-        v_fk    = tk.BooleanVar(value=w.force_kill if w else False)
-        v_apps  = tk.StringVar(value=", ".join(w.app_list) if w else "")
-
-        row("Name:",        v_name,  0)
-        row("Start (HH:MM):", v_start, 1)
-        row("End (HH:MM):", v_end,   2)
-
-        _lbl(dlg, "Mode:").grid(row=3, column=0, sticky="w", padx=12, pady=4)
-        mf = tk.Frame(dlg, bg=BG)
-        mf.grid(row=3, column=1, sticky="w", padx=8)
-        for m in ("whitelist", "blacklist"):
-            tk.Radiobutton(mf, text=m, variable=v_mode, value=m,
-                           bg=BG, fg=FG, selectcolor=BG3,
-                           activebackground=BG).pack(side="left", padx=6)
-
-        tk.Checkbutton(dlg, text="force_kill (blacklist only)", variable=v_fk,
-                       bg=BG, fg=FG, selectcolor=BG3,
-                       activebackground=BG).grid(row=4, column=0, columnspan=2,
-                                                 sticky="w", padx=12, pady=4)
-
-        _lbl(dlg, "Apps (comma-separated .exe):").grid(
-            row=5, column=0, columnspan=2, sticky="w", padx=12, pady=(8, 2))
-        apps_text = tk.Text(dlg, width=46, height=6, bg=BG3, fg=FG,
-                            insertbackground=FG, relief="flat", font=FONT)
-        apps_text.grid(row=6, column=0, columnspan=2, padx=12, pady=4)
-        apps_text.insert("1.0", v_apps.get())
-
-        err = _lbl(dlg, "", fg=RED)
-        err.grid(row=7, column=0, columnspan=2)
-
-        def confirm():
-            from datetime import time as dtime
-            name = v_name.get().strip()
-            if not name:
-                err.config(text="Name required."); return
-            try:
-                s = dtime.fromisoformat(v_start.get().strip())
-                e = dtime.fromisoformat(v_end.get().strip())
-            except ValueError:
-                err.config(text="Invalid time (HH:MM)."); return
-            apps_raw = apps_text.get("1.0", "end").strip()
-            apps = [a.strip() for a in apps_raw.replace("\n", ",").split(",") if a.strip()]
-            tw = TimeWindow(name=name, start_time=s, end_time=e,
-                            mode=v_mode.get(), app_list=apps, force_kill=v_fk.get())
-            if editing:
-                self._ce_windows[idx] = tw
-            else:
-                self._ce_windows.append(tw)
-            self._ce_refresh_tv()
-            dlg.destroy()
-
-        _btn(dlg, "OK", confirm).grid(row=8, column=0, columnspan=2, pady=8)
-
-    def _ce_save(self) -> None:
-        try:
-            interval = float(self._ce_interval.get())
-            override = int(self._ce_override.get())
-            logdir   = self._ce_logdir.get().strip()
-        except ValueError:
-            messagebox.showerror("Invalid", "check_interval must be a number.", parent=self._win)
-            return
-
-        data = {
-            "check_interval":       interval,
-            "override_max_minutes": override,
-            "log_dir":              logdir,
-            "time_windows": [
-                {
-                    "name":       w.name,
-                    "start_time": w.start_time.strftime("%H:%M"),
-                    "end_time":   w.end_time.strftime("%H:%M"),
-                    "mode":       w.mode,
-                    "force_kill": w.force_kill,
-                    "app_list":   w.app_list,
-                }
-                for w in self._ce_windows
-            ],
-        }
-
-        try:
-            with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-                f.write("# Sleeper configuration\n"
-                        "# Saved by Config Editor — changes auto-reload.\n\n")
-                yaml.dump(data, f, default_flow_style=False, allow_unicode=True,
-                          sort_keys=False)
-            messagebox.showinfo("Saved", "config.yaml saved.\nChanges will auto-reload.",
-                                parent=self._win)
-        except Exception as ex:
-            messagebox.showerror("Error", str(ex), parent=self._win)
+        _lbl(frame, "Edit config.yaml directly — changes auto-reload.",
+             fg="#888899", font=("Segoe UI", 9, "italic")).pack(pady=(2, 6))
 
 
 # ── module-level helpers ──────────────────────────────────────────────────────
