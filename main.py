@@ -1,252 +1,287 @@
-"""
-写一个适合windows, 控制电脑使用时间的软件. 希望每天 0~6:00 限制, 只能使用白名单/黑名单软件. 希望方案尽可能简洁统一. 不要用windows自带的系统功能. 如果违规, 则minimize desktop并且弹窗提醒.
-
-配置文件: 指定查询频率, 时间窗口, 黑名单模式还是白名单模式, 软件名单
-实现方法: 
-- 使用hydra读取yaml配置, 得到一列窗口( 每个列表中的element是一个时间窗口, 各有不同的模式和软件名单)
-
-"""
-import time
-import tkinter as tk
-from tkinter import messagebox
-import logging
-import sys
-import threading
-from PIL import Image, ImageDraw
-import pystray
+"""Sleeper — main monitoring process."""
 import os
-from datetime import datetime, timedelta, time as dtime
-from typing import List, Tuple
+import sys
+import time
+import threading
+import tkinter as tk
+from tkinter import ttk, messagebox
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Optional
 
-# Windows specific imports
 import win32gui
 import win32process
-
-
-# Configuration management
-import hydra
-from omegaconf import DictConfig, OmegaConf
-
-# Process information
+import win32con
 import psutil
+import pystray
+from PIL import Image
 
-# Set DEBUG flag from environment variable
-DEBUG : bool = os.environ.get("DEBUG", 'False').lower() == "true"
+import logger
+from config import Config, ConfigManager
+from overlay import ViolationOverlay
+from status_window import StatusWindow
+
+BASE_DIR = Path(__file__).resolve().parent
+CONFIG_PATH = BASE_DIR / "config.yaml"
+
 
 class Sleeper:
-    def __init__(self, config: DictConfig):
-        # Logging is configured by Hydra per the YAML config; do not override here
-        self.config = config
-        logging.info(f"Loaded configuration: {OmegaConf.to_yaml(self.config)}")
+    def __init__(self):
+        self._cfg_mgr = ConfigManager(CONFIG_PATH, on_reload=self._on_config_reload)
+        logger.init(BASE_DIR / self._cfg_mgr.config.log_dir)
+        logger.log("app_start")
 
-        self.tkroot: tk.Tk = None # type: ignore
-        self.icon: pystray.Icon = None # type: ignore
-        self.exit_code: int = 0
+        # Override state
+        self._override_until: Optional[datetime] = None
+        self._override_lock = threading.Lock()
 
-        # Setup system tray icon
-        self.setup_icontray()
-        
-        # Setup Tkinter for popups in a separate thread
-        threading.Thread(target=self.setup_tk, daemon=True).start()
+        # Violation rate-limiting: last log time per window name
+        self._last_overlay: dict[str, datetime] = {}
 
-    def setup_icontray(self):
-        """Initializes the system tray icon."""
-        # Generate and load icon from file
-        try:
-            from icon_util import generate_tray_icon
 
-            base_dir = os.path.dirname(os.path.abspath(__file__))
-            icon_path = os.path.join(base_dir, 'sleeper64.ico')
-            
-            generate_tray_icon(icon_path, size=64)
-            image = Image.open(icon_path)
-        except Exception as e:
-            logging.error(f"Failed to generate/load tray icon: {e}")
-            image = Image.new('RGBA', (64, 64), (0, 0, 0, 0))
+        # Tkinter root (for dialogs and StatusWindow)
+        self._tk_root: tk.Tk = None  # type: ignore
+        self._tk_ready = threading.Event()
 
-        menu = (
-            pystray.MenuItem('Restart', self.exit_action),
-        )
-        self.icon = pystray.Icon("sleeper_app", image, "Sleeper", menu)
-        logging.info("System tray icon setup complete.")
+        # Components (built after tk root is ready)
+        self._overlay: Optional[ViolationOverlay] = None
+        self._status_win: Optional[StatusWindow] = None
+        self._icon: Optional[pystray.Icon] = None
 
-    def setup_tk(self):
-        """Initializes the Tkinter root for popups."""
-        self.tkroot = tk.Tk("sleeper")
-        self.tkroot.withdraw() # Hide the main Tkinter window
-        self.tkroot.mainloop()
-        
-    def run(self):
-        """Starts the main monitoring loop and the system tray icon."""
-        # Start the main monitoring loop in a separate daemon thread
-        thread = threading.Thread(target=self.loop, daemon=True)
-        thread.start()
-        
-        # Run the system tray icon in the main thread (this call blocks)
-        if self.icon:
-            self.icon.run()
-        else:
-            logging.error("System tray icon not initialized. Exiting.")
-            sys.exit(1)
+    # ----------------------------------------------------------------- startup
 
-        # After the tray loop exits, terminate the process with the intended code
-        sys.exit(self.exit_code)
+    def run(self) -> None:
+        threading.Thread(target=self._tk_thread, daemon=True, name="tk-main").start()
+        self._tk_ready.wait(timeout=5)
 
-    def exit_action(self, icon, item):
-        """Handles the exit action from the system tray menu."""
-        logging.info("Exiting application via system tray.")
-        # Set non-zero exit code so guardian restarts us
-        self.exit_code = 2
-        if self.icon:
-            self.icon.stop() # Stop the pystray icon loop
-        if self.tkroot:
-            self.tkroot.quit() # Properly quit the Tkinter mainloop
-        # Do not call sys.exit() here (callback thread). Main thread will exit with exit_code after icon.run() returns.
-        
-    def _minimize_desktop(self):
-        """Minimizes all open windows."""
-        try:
-            import win32com.client
-            shell = win32com.client.Dispatch("Shell.Application")
-            shell.MinimizeAll()
-            logging.info("All windows are minimized")
-        except Exception as e:
-            logging.error(f"Error in minimizing windows: {e}")
+        self._overlay = ViolationOverlay(self._tk_root, on_override_click=self._open_override_dialog)
+        self._status_win = StatusWindow(self._tk_root, lambda: self._cfg_mgr.config)
 
-    def _show_popup(self, message: str):
-        """Shows a Tkinter warning popup."""
-        def show():
-            # Ensure the popup appears on top of other windows
-            logging.warning(f"Popup Warning: {message}")
-            if self.tkroot:
-                self.tkroot.attributes('-topmost', True)
-                messagebox.showinfo("Sleeper", message, parent=self.tkroot)
-                self.tkroot.attributes('-topmost', False) # Reset topmost attribute
+        threading.Thread(target=self._monitor_loop, daemon=True, name="monitor").start()
 
-        
-        if self.tkroot:
-            self.tkroot.after(0, show) # Schedule the popup on the Tkinter thread
-        else:
-            logging.error("Tkinter root is not initialized and cannot popup message.")
+        self._icon = self._build_tray()
+        self._icon.run()  # blocks main thread
+        logger.log("app_exit")
 
-    def get_active_window_info(self) -> Tuple[str, str]:
-        """
-        获取当前活动窗口的标题和可执行文件路径。
-        返回 (窗口标题, 可执行文件路径) 或 ("", "") 如果发生错误。
-        """
+    # ----------------------------------------------------------------- Tk root
+
+    def _tk_thread(self) -> None:
+        self._tk_root = tk.Tk()
+        self._tk_root.withdraw()
+        self._tk_ready.set()
+        self._tk_root.mainloop()
+
+    # ----------------------------------------------------------------- tray
+
+    def _build_tray(self) -> pystray.Icon:
+        from icon_util import generate_tray_icon
+        ico_path = str(BASE_DIR / "sleeper64.ico")
+        generate_tray_icon(ico_path, size=64)
+        image = Image.open(ico_path)
+
+        icon = pystray.Icon("sleeper", image, "Sleeper", menu=pystray.Menu(
+            pystray.MenuItem(self._tray_status_label, None, enabled=False),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Emergency Override…", self._tray_override,
+                             visible=lambda item: self._is_restricted_now()),
+            pystray.MenuItem("Cancel Override", self._tray_cancel_override,
+                             visible=lambda item: self._override_active()),
+            pystray.MenuItem("View Status & Logs", self._tray_status),
+            pystray.MenuItem("Edit Config", self._tray_edit_config),
+            pystray.MenuItem("Reload Config", self._tray_reload_config),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Exit", self._tray_exit,
+                             visible=lambda item: not self._is_restricted_now()),
+        ))
+        return icon
+
+    def _tray_status_label(self, item) -> str:
+        with self._override_lock:
+            if self._override_until and datetime.now() < self._override_until:
+                remaining = int((self._override_until - datetime.now()).total_seconds() / 60)
+                return f"🔓 Override — {remaining} min remaining"
+        cfg = self._cfg_mgr.config
+        w = cfg.is_restricted_now(datetime.now().time())
+        if w:
+            return f"⛔ {w.name}  {w.start_time.strftime('%H:%M')}–{w.end_time.strftime('%H:%M')}"
+        return "✅ Sleeper — Active"
+
+    def _tray_override(self, icon, item):
+        self._tk_root.after(0, self._open_override_dialog)
+
+    def _tray_cancel_override(self, icon, item):
+        with self._override_lock:
+            self._override_until = None
+        logger.log("override_cancelled")
+
+    def _tray_status(self, icon, item):
+        self._tk_root.after(0, self._status_win.toggle)
+
+    def _tray_edit_config(self, icon, item):
+        os.startfile(str(CONFIG_PATH))
+
+    def _tray_reload_config(self, icon, item):
+        self._cfg_mgr.reload()
+
+    def _tray_exit(self, icon, item):
+        self._overlay.destroy()
+        self._tk_root.after(0, self._tk_root.destroy)
+        icon.stop()
+
+    # ----------------------------------------------------------------- override dialog
+
+    def _open_override_dialog(self) -> None:
+        """Show the Emergency Override dialog (Tk thread)."""
+        max_min = self._cfg_mgr.config.override_max_minutes
+
+        dlg = tk.Toplevel(self._tk_root)
+        dlg.title("Emergency Override")
+        dlg.geometry("380x210")
+        dlg.configure(bg="#1e1e2e")
+        dlg.attributes("-topmost", True)
+        dlg.resizable(False, False)
+        # Do NOT use grab_set() — on Windows it can intercept Win32 messages
+        # and starve pystray's tray icon message loop, making the tray vanish.
+        dlg.protocol("WM_DELETE_WINDOW", dlg.destroy)
+
+        tk.Label(dlg, text="Reason (min 10 chars):", bg="#1e1e2e", fg="#c8d3f5",
+                 font=("Segoe UI", 10)).pack(anchor="w", padx=16, pady=(16, 2))
+        reason_var = tk.StringVar()
+        reason_entry = tk.Entry(dlg, textvariable=reason_var, width=44,
+                                bg="#2d2d44", fg="#ffffff", insertbackground="white",
+                                relief="flat", font=("Segoe UI", 10))
+        reason_entry.pack(padx=16, pady=(0, 10))
+        reason_entry.focus_set()
+
+        tk.Label(dlg, text="Duration:", bg="#1e1e2e", fg="#c8d3f5",
+                 font=("Segoe UI", 10)).pack(anchor="w", padx=16)
+        durations = [d for d in [5, 15, 30, 60] if d <= max_min]
+        dur_var = tk.IntVar(value=durations[0])
+        dur_frame = tk.Frame(dlg, bg="#1e1e2e")
+        dur_frame.pack(anchor="w", padx=16, pady=(4, 12))
+        for d in durations:
+            tk.Radiobutton(dur_frame, text=f"{d} min", variable=dur_var, value=d,
+                           bg="#1e1e2e", fg="#c8d3f5", selectcolor="#2d2d44",
+                           activebackground="#1e1e2e").pack(side="left", padx=6)
+
+        err_label = tk.Label(dlg, text="", bg="#1e1e2e", fg="#ff6b6b",
+                             font=("Segoe UI", 9))
+        err_label.pack()
+
+        def confirm():
+            reason = reason_var.get().strip()
+            if len(reason) < 10:
+                err_label.config(text="Reason too short (min 10 chars).")
+                return
+            mins = dur_var.get()
+            until = datetime.now() + timedelta(minutes=mins)
+            with self._override_lock:
+                self._override_until = until
+            logger.log("override_granted", reason=reason, minutes=mins)
+            dlg.destroy()
+
+        tk.Button(dlg, text="Confirm Override", command=confirm,
+                  bg="#5a3a8c", fg="white", relief="flat",
+                  font=("Segoe UI", 10, "bold")).pack(pady=2)
+
+    # ----------------------------------------------------------------- helpers
+
+    def _is_restricted_now(self) -> bool:
+        return self._cfg_mgr.config.is_restricted_now(datetime.now().time()) is not None
+
+    def _override_active(self) -> bool:
+        with self._override_lock:
+            return bool(self._override_until and datetime.now() < self._override_until)
+
+    def _on_config_reload(self, cfg: Config) -> None:
+        logger.log("config_reloaded")
+
+    def _get_active_app(self) -> tuple[int, str, str, int]:
+        """Returns (hwnd, window_title, exe_basename, pid). hwnd=0 on failure."""
         try:
             hwnd = win32gui.GetForegroundWindow()
             if not hwnd:
-                return "", ""
-            
-            # Get window title
-            window_title = win32gui.GetWindowText(hwnd)
-
-            # Get process ID
+                return 0, "", "", 0
+            title = win32gui.GetWindowText(hwnd)
             _, pid = win32process.GetWindowThreadProcessId(hwnd)
             if not pid:
-                return window_title, ""
+                return hwnd, title, "", 0
+            proc = psutil.Process(pid)
+            return hwnd, title, os.path.basename(proc.exe()).lower(), pid
+        except Exception:
+            return 0, "", "", 0
 
-            # Get executable path from process ID
-            try:
-                process = psutil.Process(pid)
-                exe_path = process.exe()
-                return window_title, exe_path
-            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess) as e:
-                logging.debug(f"Cannot get the information of process PID {pid}: {e}")
-                return window_title, ""
-        except Exception as e:
-            logging.error(f"Error retrieving active window information: {e}")
-            return "", ""
 
-    def is_time_restricted(self, current_time: dtime, time_window_cfg: DictConfig) -> bool:
-        """
-        检查当前时间是否在给定的时间窗口内。
-        处理跨午夜的时间窗口。
-        """
-        try:
-            start_str = time_window_cfg.start_time
-            end_str = time_window_cfg.end_time
-            
-            start_time = datetime.strptime(start_str, "%H:%M").time()
-            end_time = datetime.strptime(end_str, "%H:%M").time()
+    # ----------------------------------------------------------------- monitor loop
 
-            if start_time <= end_time:
-                # 正常时间窗口 (例如, 09:00 - 17:00)
-                return start_time <= current_time <= end_time
-            else:
-                # 时间窗口跨午夜 (例如, 23:00 - 06:00)
-                return current_time >= start_time or current_time <= end_time
-        except Exception as e:
-            logging.error(f"Error while checking time restriction window '{time_window_cfg.name}': {e}")
-            return False
-
-    def is_app_allowed(self, app_path: str, mode: str, app_list: List[str]) -> bool:
-        """
-        根据模式 (黑名单/白名单) 和应用程序列表检查应用程序是否被允许。
-        如果允许返回 True，如果受限返回 False。
-        """
-        if not app_path:
-            return True # 如果无法获取应用程序路径，则假定允许
-
-        app_name = os.path.basename(app_path).lower()
-        
-        allowed_apps_lower = [a.lower() for a in app_list]
-
-        if mode == "blacklist":
-            return app_name not in allowed_apps_lower
-        elif mode == "whitelist":
-            return app_name in allowed_apps_lower
-        else:
-            logging.warning(f"Unknown mode '{mode}'. Viewed as 'allowed'. ")
-            return True # 未知模式，假定允许
-
-    def loop(self):
-        """Main monitoring loop, periodically checking active windows and time restrictions."""
+    def _monitor_loop(self) -> None:
+        my_pid = os.getpid()
         while True:
+            cfg = self._cfg_mgr.config
             now = datetime.now()
-            current_time = now.time()
-            
-            restricted_active = False
-            active_window_title, active_app_path = self.get_active_window_info()
-            
-            if active_app_path: # 仅在成功获取应用程序路径时进行检查
-                for window_cfg in self.config.time_windows:
-                    if self.is_time_restricted(current_time, window_cfg):
-                        logging.debug(f"Current time {current_time} is within restricted time interval '{window_cfg.name}'.")
-                        if not self.is_app_allowed(active_app_path, window_cfg.mode, window_cfg.app_list):
-                            logging.info(f"Violation detected: Application '{os.path.basename(active_app_path)}' ({active_window_title}) is not allowed during time interval '{window_cfg.name}' (mode: {window_cfg.mode}).")
-                            self._minimize_desktop()
-                            app_name = os.path.basename(active_app_path)
-                            current_time_str = now.strftime("%H:%M:%S")
-                            time_range = f"{window_cfg.start_time} - {window_cfg.end_time}"
-                            mode_label = "Whitelist" if window_cfg.mode == "whitelist" else "Blacklist"
-                            message = (
-                                f"{window_cfg.name}\n\n"
-                                f"Current time: {current_time_str}\n"
-                                f"Time range: {time_range}\n"
-                                f"Window title: {active_window_title}\n"
-                                f"Application: {app_name}\n"
-                                f"Mode: {mode_label} :=> ({', '.join(window_cfg.app_list)})\n"
-                            )
-                            self._show_popup(message)
-                            restricted_active = True
-                            break # enough to find one restriction, no need to check other windows
-            
-            if not restricted_active:
-                logging.debug(f"No active restriction or application is allowed. Current time: {current_time}, Active app: {os.path.basename(active_app_path) if active_app_path else 'N/A'}")
 
-            time.sleep(self.config.check_interval)
+            # If override active, skip enforcement
+            with self._override_lock:
+                if self._override_until:
+                    if now < self._override_until:
+                        self._overlay.hide()
+                        time.sleep(cfg.check_interval)
+                        continue
+                    else:
+                        logger.log("override_expired")
+                        self._override_until = None
 
-@hydra.main(version_base=None, config_path=".", config_name="config")
-def main(cfg: DictConfig):
-    """
-    Main function, started by Hydra.
-    """
-    logging.info("Sleeper application starting...")
-    monitor = Sleeper(config=cfg)
-    monitor.run()
-    logging.info("Sleeper application stopped.")
+            window = cfg.is_restricted_now(now.time())
+            if window is None:
+                self._overlay.hide()
+                time.sleep(cfg.check_interval)
+                continue
+
+            hwnd, title, app_name, pid = self._get_active_app()
+
+            # Skip when our own windows (overlay, dialogs) are foreground —
+            # avoids whitelisting pythonw.exe and maintains current overlay state.
+            if pid == my_pid or not app_name:
+                time.sleep(cfg.check_interval)
+                continue
+
+            if not cfg.is_app_allowed(app_name, window):
+                # Minimize only the specific violating window
+                if hwnd:
+                    try:
+                        win32gui.ShowWindow(hwnd, win32con.SW_MINIMIZE)
+                    except Exception:
+                        pass
+
+                # Force-kill (blacklist + force_kill only)
+                if window.mode == "blacklist" and window.force_kill:
+                    self._force_kill(app_name)
+
+                # Show banner; rate-limit only the log write (not the show call)
+                self._overlay.show(window.name, app_name, window.end_time)
+                last = self._last_overlay.get(window.name)
+                if last is None or (now - last).total_seconds() >= 5:
+                    self._last_overlay[window.name] = now
+                    logger.log("violation", rule=window.name, app=app_name, title=title)
+            else:
+                self._overlay.hide()
+
+            time.sleep(cfg.check_interval)
+
+    def _force_kill(self, app_name: str) -> None:
+        for proc in psutil.process_iter(["name", "pid"]):
+            try:
+                if proc.info["name"] and proc.info["name"].lower() == app_name:
+                    proc.kill()
+                    logger.log("force_killed", app=app_name, pid=proc.info["pid"])
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+
+
+def main() -> None:
+    app = Sleeper()
+    app.run()
+
 
 if __name__ == "__main__":
     main()

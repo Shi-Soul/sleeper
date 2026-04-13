@@ -1,48 +1,26 @@
-# Application settings
-check_interval: 2  # seconds
+# Sleeper configuration
+# Edit this file freely; changes are hot-reloaded automatically.
+
+check_interval: 0.5 # seconds between active-window checks
+log_dir: logs # relative to sleeper directory
+override_max_minutes: 60 # maximum duration allowed for Emergency Override
 
 time_windows:
   - name: "Night Limit"
     start_time: "00:00"
     end_time: "06:00"
-    mode: "whitelist"
+    mode: "whitelist" # whitelist | blacklist
+    force_kill: false # (blacklist only) kill the violating process
     app_list:
       - "explorer.exe"
       - "cmd.exe"
       - "powershell.exe"
       - "python.exe"
-
-# Hydra configuration (logging, output dirs, etc.)
-hydra:
-  run:
-    # Create a run directory per execution; Hydra ensures it exists
-    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
-
-  # output_subdir: null  # don't create an extra .hydra subdir under run dir
-
-  # Ensure Hydra's own logs don't disable existing loggers
-  hydra_logging:
-    disable_existing_loggers: false
-
-  # Configure application logging (root logger)
-  job_logging:
-    version: 1
-    # formatters:
-    #   simple:
-    #     format: "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
-    #     datefmt: "%Y-%m-%d %H:%M:%S"
-    handlers:
-      console:
-        class: logging.StreamHandler
-        formatter: simple
-        stream: ext://sys.stdout
-      file:
-        class: logging.FileHandler
-        formatter: simple
-        filename: ${hydra:run.dir}/sleeper_${now:%Y-%m-%d-%H}.log
-        # Ensure Chinese characters are written correctly
-        encoding: utf-8
-    root:
-      level: INFO
-      handlers: [console, file]
-    disable_existing_loggers: false
+      - "pythonw.exe"
+  - name: "DEBUG"
+    start_time: "16:09"
+    end_time: "16:11"
+    mode: "blacklist"
+    force_kill: false # (blacklist only) kill the violating process
+    app_list:
+      - "msedge.exe"

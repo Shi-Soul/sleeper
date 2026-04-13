@@ -1,5 +1,4 @@
-hydra-core
-omegaconf
+pyyaml
 pystray
 pillow
 psutil
