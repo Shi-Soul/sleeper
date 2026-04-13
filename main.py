@@ -82,8 +82,8 @@ class Sleeper:
         icon = pystray.Icon("sleeper", image, "Sleeper", menu=pystray.Menu(
             pystray.MenuItem(self._tray_status_label, None, enabled=False),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("View Status & Logs", self._tray_status),
-            pystray.MenuItem("Reload Config", self._tray_reload_config),
+            pystray.MenuItem("Status", self._tray_status),
+            pystray.MenuItem("Restart", self._tray_restart),
         ))
         return icon
 
@@ -101,8 +101,12 @@ class Sleeper:
     def _tray_status(self, icon, item):
         self._tk_root.after(0, self._status_win.toggle)
 
-    def _tray_reload_config(self, icon, item):
-        self._cfg_mgr.reload()
+    def _tray_restart(self, icon, item):
+        """Exit cleanly — guardian will relaunch main.py automatically."""
+        logger.log("restart_requested")
+        self._overlay.destroy()
+        self._tk_root.after(0, self._tk_root.destroy)
+        icon.stop()
 
     # ----------------------------------------------------------------- override dialog
 
