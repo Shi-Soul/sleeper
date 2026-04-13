@@ -56,8 +56,8 @@ def _parse(path: Path) -> Config:
 
     windows = []
     for w in raw.get("time_windows", []):
-        start = dtime.fromisoformat(w["start_time"])
-        end   = dtime.fromisoformat(w["end_time"])
+        start = dtime.fromisoformat(str(w["start_time"]))
+        end   = dtime.fromisoformat(str(w["end_time"]))
         windows.append(TimeWindow(
             name=w["name"],
             start_time=start,

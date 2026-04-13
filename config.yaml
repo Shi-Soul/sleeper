@@ -1,26 +1,29 @@
 # Sleeper configuration
-# Edit this file freely; changes are hot-reloaded automatically.
+# Saved by Config Editor — changes auto-reload.
 
-check_interval: 0.5 # seconds between active-window checks
-log_dir: logs # relative to sleeper directory
-override_max_minutes: 60 # maximum duration allowed for Emergency Override
-
+check_interval: 0.5
+override_max_minutes: 60
+log_dir: logs
 time_windows:
-  - name: "Night Limit"
+  - name: Night Limit 1
     start_time: "00:00"
     end_time: "06:00"
-    mode: "whitelist" # whitelist | blacklist
-    force_kill: false # (blacklist only) kill the violating process
+    mode: whitelist
+    force_kill: false
     app_list:
-      - "explorer.exe"
-      - "cmd.exe"
-      - "powershell.exe"
-      - "python.exe"
-      - "pythonw.exe"
-  - name: "DEBUG"
-    start_time: "16:09"
-    end_time: "16:11"
-    mode: "blacklist"
-    force_kill: false # (blacklist only) kill the violating process
+      - explorer.exe
+      - cmd.exe
+      - powershell.exe
+      - python.exe
+      - pythonw.exe
+  - name: Night Limit 2
+    start_time: "23:30"
+    end_time: "23:59"
+    mode: whitelist
+    force_kill: false
     app_list:
-      - "msedge.exe"
+      - explorer.exe
+      - cmd.exe
+      - powershell.exe
+      - python.exe
+      - pythonw.exe
