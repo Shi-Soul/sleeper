@@ -15,6 +15,8 @@ from pathlib import Path
 
 import win32com.client
 
+_NO_WINDOW = 0x08000000
+
 BASE_DIR = Path(__file__).resolve().parent
 PYTHONW = Path(sys.executable).with_name("pythonw.exe")
 
@@ -32,7 +34,7 @@ def _guardian_cmd() -> str:
 
 def _task_exists(name: str) -> bool:
     r = subprocess.run(["schtasks", "/query", "/tn", name],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, creationflags=_NO_WINDOW)
     return r.returncode == 0
 
 
@@ -44,13 +46,13 @@ def _register_task(name: str) -> bool:
         "/sc", "MINUTE", "/mo", "1",
         "/f", "/rl", "LIMITED",
     ]
-    r = subprocess.run(cmd, capture_output=True, text=True)
+    r = subprocess.run(cmd, capture_output=True, text=True, creationflags=_NO_WINDOW)
     return r.returncode == 0
 
 
 def _delete_task(name: str) -> None:
     subprocess.run(["schtasks", "/delete", "/tn", name, "/f"],
-                   capture_output=True)
+                   capture_output=True, creationflags=_NO_WINDOW)
 
 
 # ------------------------------------------------------------------ registry

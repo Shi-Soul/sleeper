@@ -56,11 +56,15 @@ def _guardian_cmd() -> str:
     return f'"{PYTHONW}" "{BASE_DIR / "guardian.py"}"'
 
 
+_NO_WINDOW = 0x08000000  # CREATE_NO_WINDOW
+
+
 def _task_exists(name: str) -> bool:
     try:
         result = subprocess.run(
             ["schtasks", "/query", "/tn", name],
-            capture_output=True, text=True
+            capture_output=True, text=True,
+            creationflags=_NO_WINDOW,
         )
         return result.returncode == 0
     except Exception:
@@ -69,20 +73,15 @@ def _task_exists(name: str) -> bool:
 
 def _register_task(name: str, offset_sec: int) -> None:
     """Register a user-level Task Scheduler task via schtasks CLI."""
-    # Start time = now + offset so tasks fire at staggered times
-    start_time = datetime.now().strftime(f"%Y-%m-%dT%H:%M:%S")
-    # /sc MINUTE /mo 1 = every 1 minute; /delay not available in all versions
-    # We create each task with a ONCE trigger at slightly different times
-    # then use /ri (repeat interval) to make it repeat every minute.
     cmd = [
         "schtasks", "/create",
         "/tn", name,
         "/tr", _guardian_cmd(),
         "/sc", "MINUTE", "/mo", "1",
-        "/f",          # force overwrite
+        "/f",
         "/rl", "LIMITED",
     ]
-    subprocess.run(cmd, capture_output=True)
+    subprocess.run(cmd, capture_output=True, creationflags=_NO_WINDOW)
 
 
 def _reg_key_exists() -> bool:
