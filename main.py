@@ -82,16 +82,8 @@ class Sleeper:
         icon = pystray.Icon("sleeper", image, "Sleeper", menu=pystray.Menu(
             pystray.MenuItem(self._tray_status_label, None, enabled=False),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Emergency Override…", self._tray_override,
-                             visible=lambda item: self._is_restricted_now()),
-            pystray.MenuItem("Cancel Override", self._tray_cancel_override,
-                             visible=lambda item: self._override_active()),
             pystray.MenuItem("View Status & Logs", self._tray_status),
-            pystray.MenuItem("Edit Config", self._tray_edit_config),
             pystray.MenuItem("Reload Config", self._tray_reload_config),
-            pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Exit", self._tray_exit,
-                             visible=lambda item: not self._is_restricted_now()),
         ))
         return icon
 
@@ -106,27 +98,11 @@ class Sleeper:
             return f"⛔ {w.name}  {w.start_time.strftime('%H:%M')}–{w.end_time.strftime('%H:%M')}"
         return "✅ Sleeper — Active"
 
-    def _tray_override(self, icon, item):
-        self._tk_root.after(0, self._open_override_dialog)
-
-    def _tray_cancel_override(self, icon, item):
-        with self._override_lock:
-            self._override_until = None
-        logger.log("override_cancelled")
-
     def _tray_status(self, icon, item):
         self._tk_root.after(0, self._status_win.toggle)
 
-    def _tray_edit_config(self, icon, item):
-        os.startfile(str(CONFIG_PATH))
-
     def _tray_reload_config(self, icon, item):
         self._cfg_mgr.reload()
-
-    def _tray_exit(self, icon, item):
-        self._overlay.destroy()
-        self._tk_root.after(0, self._tk_root.destroy)
-        icon.stop()
 
     # ----------------------------------------------------------------- override dialog
 
@@ -185,13 +161,6 @@ class Sleeper:
                   font=("Segoe UI", 10, "bold")).pack(pady=2)
 
     # ----------------------------------------------------------------- helpers
-
-    def _is_restricted_now(self) -> bool:
-        return self._cfg_mgr.config.is_restricted_now(datetime.now().time()) is not None
-
-    def _override_active(self) -> bool:
-        with self._override_lock:
-            return bool(self._override_until and datetime.now() < self._override_until)
 
     def _on_config_reload(self, cfg: Config) -> None:
         logger.log("config_reloaded")
