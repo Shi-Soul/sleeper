@@ -3,3 +3,4 @@ pystray
 pillow
 psutil
 pywin32
+matplotlib

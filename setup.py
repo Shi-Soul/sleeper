@@ -176,6 +176,22 @@ def cmd_install() -> None:
 
 
 def cmd_uninstall() -> None:
+    # Block uninstall during active restriction windows
+    try:
+        from config import ConfigManager
+        from datetime import datetime as _dt
+        _cfg = ConfigManager(BASE_DIR / "config.yaml").config
+        _w = _cfg.is_restricted_now(_dt.now().time())
+        if _w:
+            print(f"[BLOCKED] Cannot uninstall during restricted window '{_w.name}' "
+                  f"({_w.start_time.strftime('%H:%M')}–{_w.end_time.strftime('%H:%M')}).")
+            print("Use Emergency Override first, or wait until the window ends.")
+            sys.exit(1)
+    except SystemExit:
+        raise
+    except Exception as e:
+        print(f"[WARN] Could not check restriction status: {e}")
+
     print("Uninstalling Sleeper...\n")
     print("  Stopping running processes...")
     _stop_guardian()
