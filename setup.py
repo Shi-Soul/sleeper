@@ -187,7 +187,10 @@ def cmd_uninstall() -> None:
         if _w:
             print(f"[BLOCKED] Cannot uninstall during restricted window '{_w.name}' "
                   f"({_w.start_time.strftime('%H:%M')}–{_w.end_time.strftime('%H:%M')}).")
-            print("Use Emergency Override first, or wait until the window ends.")
+            if _w.allow_override:
+                print("Use Emergency Override first, or wait until the window ends.")
+            else:
+                print("Wait until the window ends.")
             sys.exit(1)
     except SystemExit:
         raise

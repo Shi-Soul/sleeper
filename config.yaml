@@ -10,6 +10,7 @@ time_windows:
     end_time: "06:00"
     mode: whitelist
     force_kill: false
+    allow_override: false
     app_list:
       - explorer.exe
       - cmd.exe
@@ -17,10 +18,11 @@ time_windows:
       - python.exe
       - pythonw.exe
   - name: Night Limit 2
-    start_time: "23:30"
+    start_time: "23:20"
     end_time: "23:59"
     mode: whitelist
     force_kill: false
+    allow_override: false
     app_list:
       - explorer.exe
       - cmd.exe

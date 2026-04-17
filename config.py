@@ -18,6 +18,7 @@ class TimeWindow:
     mode: str          # "whitelist" | "blacklist"
     app_list: List[str]
     force_kill: bool = False
+    allow_override: bool = True
 
 
 @dataclass
@@ -65,6 +66,7 @@ def _parse(path: Path) -> Config:
             mode=w.get("mode", "whitelist"),
             app_list=w.get("app_list", []),
             force_kill=w.get("force_kill", False),
+            allow_override=w.get("allow_override", True),
         ))
 
     return Config(

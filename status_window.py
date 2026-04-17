@@ -273,10 +273,10 @@ class StatusWindow:
                            relief="groove", bd=1)
         wf.pack(fill="both", expand=True, padx=10, pady=4)
 
-        wcols = ("name", "start", "end", "mode", "force_kill", "apps")
+        wcols = ("name", "start", "end", "mode", "force_kill", "allow_override", "apps")
         tv = ttk.Treeview(wf, columns=wcols, show="headings",
                           selectmode="none", height=6)
-        for col, w in zip(wcols, (120, 60, 60, 80, 70, 300)):
+        for col, w in zip(wcols, (120, 60, 60, 80, 70, 90, 210)):
             tv.heading(col, text=col)
             tv.column(col, width=w, minwidth=40)
         wsb = tk.Scrollbar(wf, orient="vertical", command=tv.yview)
@@ -291,6 +291,7 @@ class StatusWindow:
                 w.end_time.strftime("%H:%M"),
                 w.mode,
                 str(w.force_kill),
+                str(w.allow_override),
                 ", ".join(w.app_list),
             ))
 

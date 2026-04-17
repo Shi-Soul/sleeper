@@ -87,13 +87,19 @@ class Sleeper:
         ))
         return icon
 
-    def _tray_status_label(self, item) -> str:
-        with self._override_lock:
-            if self._override_until and datetime.now() < self._override_until:
-                remaining = int((self._override_until - datetime.now()).total_seconds() / 60)
-                return f"🔓 Override — {remaining} min remaining"
+    def _can_override_now(self) -> bool:
         cfg = self._cfg_mgr.config
-        w = cfg.is_restricted_now(datetime.now().time())
+        window = cfg.is_restricted_now(datetime.now().time())
+        return bool(window and window.allow_override)
+
+    def _tray_status_label(self, item) -> str:
+        now = datetime.now()
+        cfg = self._cfg_mgr.config
+        w = cfg.is_restricted_now(now.time())
+        with self._override_lock:
+            if self._override_until and now < self._override_until and (w is None or w.allow_override):
+                remaining = int((self._override_until - now).total_seconds() / 60)
+                return f"🔓 Override — {remaining} min remaining"
         if w:
             return f"⛔ {w.name}  {w.start_time.strftime('%H:%M')}–{w.end_time.strftime('%H:%M')}"
         return "✅ Sleeper — Active"
@@ -112,6 +118,9 @@ class Sleeper:
 
     def _open_override_dialog(self) -> None:
         """Show the Emergency Override dialog (Tk thread)."""
+        if not self._can_override_now():
+            return
+
         max_min = self._cfg_mgr.config.override_max_minutes
 
         dlg = tk.Toplevel(self._tk_root)
@@ -192,11 +201,14 @@ class Sleeper:
         while True:
             cfg = self._cfg_mgr.config
             now = datetime.now()
+            window = cfg.is_restricted_now(now.time())
 
-            # If override active, skip enforcement
+            # If override active, skip enforcement only when the active window allows it.
             with self._override_lock:
                 if self._override_until:
-                    if now < self._override_until:
+                    if window is not None and not window.allow_override:
+                        self._override_until = None
+                    elif now < self._override_until:
                         self._overlay.hide()
                         time.sleep(cfg.check_interval)
                         continue
@@ -204,7 +216,6 @@ class Sleeper:
                         logger.log("override_expired")
                         self._override_until = None
 
-            window = cfg.is_restricted_now(now.time())
             if window is None:
                 self._overlay.hide()
                 time.sleep(cfg.check_interval)
@@ -231,7 +242,7 @@ class Sleeper:
                     self._force_kill(app_name)
 
                 # Show banner; rate-limit only the log write (not the show call)
-                self._overlay.show(window.name, app_name, window.end_time)
+                self._overlay.show(window.name, app_name, window.end_time, allow_override=window.allow_override)
                 last = self._last_overlay.get(window.name)
                 if last is None or (now - last).total_seconds() >= 5:
                     self._last_overlay[window.name] = now

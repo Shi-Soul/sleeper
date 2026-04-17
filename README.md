@@ -6,6 +6,7 @@ Sleeper is a lightweight Windows utility that restricts computer usage during co
 
 ---
 
+
 ## Installation
 
 ```bash
@@ -65,6 +66,7 @@ time_windows:
     end_time: "06:00"
     mode: "whitelist"      # whitelist | blacklist
     force_kill: false      # (blacklist only) kill the violating process
+    allow_override: true   # false hides Emergency Override during this window
     app_list:
       - "explorer.exe"
       - "cmd.exe"
@@ -72,6 +74,7 @@ time_windows:
 
 - **whitelist** mode: only listed apps are allowed during the window
 - **blacklist** mode: listed apps are blocked; `force_kill: true` terminates them
+- `allow_override: false` disables Emergency Override for that specific window and hides the button
 - Cross-midnight windows are supported (e.g. `23:00` → `06:00`)
 
 ---
@@ -92,7 +95,7 @@ The tray icon shows context-aware state:
 
 ## Emergency Override
 
-During a restricted period, click **Emergency Override…** from the tray to temporarily suspend enforcement. You must enter a reason (≥10 chars) and select a duration (5 / 15 / 30 / 60 min, capped by `override_max_minutes`). All overrides are logged.
+During a restricted period, **Emergency Override…** is available only when the active time window has `allow_override: true`. When enabled, you must enter a reason (≥10 chars) and select a duration (5 / 15 / 30 / 60 min, capped by `override_max_minutes`). All overrides are logged.
 
 ---
 
@@ -101,7 +104,7 @@ During a restricted period, click **Emergency Override…** from the tray to tem
 When a disallowed app is detected:
 - All windows are **minimized** on every check cycle
 - A non-blocking **overlay banner** appears in the top-right corner (at most once per 60 seconds per rule), showing the rule name, violating app, and when the restriction ends
-- The banner has two buttons: **Snooze 60s** (dismiss overlay) and **Emergency Override…**
+- The banner shows **Emergency Override…** only when the active window has `allow_override: true`
 - In blacklist mode with `force_kill: true`, the violating process is killed
 
 ---
